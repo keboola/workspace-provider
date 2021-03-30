@@ -1,6 +1,6 @@
 <?php
 
-namespace Keboola\WorkspaceProvider\Tests\Provider;
+namespace Keboola\WorkspaceProvider\Tests\Staging\Workspace;
 
 use Keboola\StorageApi\Client;
 use Keboola\StorageApi\Components;
@@ -8,10 +8,11 @@ use Keboola\StorageApi\Options\Components\Configuration;
 use Keboola\StorageApi\Options\Components\ListComponentConfigurationsOptions;
 use Keboola\StorageApi\Options\Components\ListConfigurationWorkspacesOptions;
 use Keboola\StorageApi\Workspaces;
-use Keboola\WorkspaceProvider\Provider\ABSWorkspaceProvider;
+use Keboola\WorkspaceProvider\WorkspaceProviderFactory\ComponentWorkspaceProviderFactory;
+use Keboola\WorkspaceProvider\Staging\Workspace\SynapseWorkspaceStaging;
 use PHPUnit\Framework\TestCase;
 
-class AbsWorkspaceProviderTest extends TestCase
+class SynapseWorkspaceProviderTest extends TestCase
 {
     /**
      * @var Client
@@ -20,10 +21,12 @@ class AbsWorkspaceProviderTest extends TestCase
 
     public function setUp()
     {
-        parent::setUp();
         if (!getenv('RUN_SYNAPSE_TESTS')) {
-            return;
+            self::markTestSkipped('Synapse test is disabled.');
         }
+        
+        parent::setUp();
+
         $this->client = new Client([
             'url' => getenv('STORAGE_API_URL_SYNAPSE'),
             'token' => getenv('STORAGE_API_TOKEN_SYNAPSE'),
@@ -43,28 +46,32 @@ class AbsWorkspaceProviderTest extends TestCase
         }
     }
 
-    public function testAbsWorkspaceProvider()
+    public function testSynapseWorkspaceProvider()
     {
-        if (!getenv('RUN_SYNAPSE_TESTS')) {
-            self::markTestSkipped('Synapse test is disabled.');
-        }
         $components = new Components($this->client);
         $configuration = new Configuration();
         $configuration->setComponentId('keboola.runner-workspace-test');
         $configuration->setName('runner-tests');
         $configuration->setConfigurationId('runner-test-configuration');
         $components->addConfiguration($configuration);
-        $provider = new ABSWorkspaceProvider(
-            $this->client,
+        
+        $providerFactory = new ComponentWorkspaceProviderFactory(
+            new Components($this->client),
+            new Workspaces($this->client),
             'keboola.runner-workspace-test',
             'runner-test-configuration'
         );
+        $provider = $providerFactory->getProvider(SynapseWorkspaceStaging::class);
+        
         $workspaceId = $provider->getWorkspaceId();
         $workspaces = new Workspaces($this->client);
         $workspace = $workspaces->getWorkspace($workspaceId);
         self::assertEquals('keboola.runner-workspace-test', $workspace['component']);
         self::assertEquals('runner-test-configuration', $workspace['configurationId']);
-        self::assertEquals('abs', $workspace['connection']['backend']);
-        self::assertEquals(['connectionString', 'container'], array_keys($provider->getCredentials()));
+        self::assertArrayHasKey('host', $workspace['connection']);
+        self::assertArrayHasKey('database', $workspace['connection']);
+        self::assertArrayHasKey('user', $workspace['connection']);
+        self::assertEquals('synapse', $workspace['connection']['backend']);
+        self::assertEquals(['host', 'warehouse', 'database', 'schema', 'user', 'password'], array_keys($provider->getCredentials()));
     }
 }
