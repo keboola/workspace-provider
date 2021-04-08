@@ -2,13 +2,11 @@
 
 namespace Keboola\WorkspaceProvider\Tests\Provider;
 
-use Keboola\StorageApi\Workspaces;
 use Keboola\WorkspaceProvider\Exception\StagingProviderException;
 use Keboola\WorkspaceProvider\Provider\LocalStagingProvider;
 use Keboola\WorkspaceProvider\Staging\LocalStaging;
-use Keboola\WorkspaceProvider\Staging\StagingInterface;
 use Keboola\WorkspaceProvider\Staging\Workspace\SnowflakeWorkspaceStaging;
-use Keboola\WorkspaceProvider\Staging\Workspace\WorkspaceStaging;
+
 use PHPUnit\Framework\TestCase;
 
 class LocalStagingProviderTest extends TestCase
@@ -41,9 +39,6 @@ class LocalStagingProviderTest extends TestCase
     {
         $localPath = '/data/in/test';
 
-        $workspacesApiClient = $this->createMock(Workspaces::class);
-        $workspacesApiClient->expects(self::never())->method(self::anything());
-
         $workspaceProvider = new LocalStagingProvider(function () use ($localPath) {
             return new LocalStaging($localPath);
         });
@@ -54,9 +49,6 @@ class LocalStagingProviderTest extends TestCase
     public function testWorkspaceStagingIsCreatedLazily()
     {
         $callCounter = 0;
-
-        $workspacesApiClient = $this->createMock(Workspaces::class);
-        $workspacesApiClient->expects(self::never())->method(self::anything());
 
         $workspaceProvider = new LocalStagingProvider(function () use (&$callCounter) {
             $callCounter += 1;
