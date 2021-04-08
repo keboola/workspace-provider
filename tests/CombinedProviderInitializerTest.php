@@ -2,10 +2,13 @@
 
 namespace Keboola\WorkspaceProvider\Tests;
 
+use Keboola\InputMapping\Staging\ProviderInterface;
 use Keboola\InputMapping\Staging\StrategyFactory as InputStrategyFactory;
+use Keboola\InputMapping\State\InputTableStateList;
 use Keboola\OutputMapping\Staging\StrategyFactory as OutputStrategyFactory;
 use Keboola\StorageApi\Client;
 use Keboola\StorageApi\Components;
+use Keboola\StorageApi\Options\Components\Configuration;
 use Keboola\StorageApi\Workspaces;
 use Keboola\StorageApiBranch\ClientWrapper;
 use Keboola\WorkspaceProvider\InputProviderInitializer;
@@ -13,6 +16,7 @@ use Keboola\WorkspaceProvider\OutputProviderInitializer;
 use Keboola\WorkspaceProvider\WorkspaceProviderFactory\ComponentWorkspaceProviderFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use ReflectionProperty;
 
 class CombinedProviderInitializerTest extends TestCase
 {
@@ -41,40 +45,61 @@ class CombinedProviderInitializerTest extends TestCase
         $logger = new NullLogger();
 
         $componentsApi = new Components($this->client);
+        $configuration = new Configuration();
+        $componentId = 'keboola.runner-workspace-test';
+        $configuration->setComponentId($componentId);
+        $configuration->setName('test-config');
+        $configId = uniqid('my-test-config');
+        $configuration->setConfigurationId($configId);
+        $configuration->setConfiguration([]);
+        $componentsApi->addConfiguration($configuration);
         $workspacesApi = new Workspaces($this->client);
 
-        $providerFactory = new ComponentWorkspaceProviderFactory(
-            $componentsApi,
-            $workspacesApi,
-            'my-test-component',
-            'my-test-config'
-        );
+        try {
+            $providerFactory = new ComponentWorkspaceProviderFactory(
+                $componentsApi,
+                $workspacesApi,
+                $componentId,
+                $configId
+            );
 
-        $inputStagingFactory = new InputStrategyFactory($clientWrapper, $logger, 'json');
-        $inputInitializer = new InputProviderInitializer($inputStagingFactory, $providerFactory);
-        $inputInitializer->initializeProviders(
-            InputStrategyFactory::WORKSPACE_SNOWFLAKE,
-            [
-                'owner' => ['hasSnowflake' => true],
-            ],
-            '/tmp/random/data'
-        );
+            $inputStagingFactory = new InputStrategyFactory($clientWrapper, $logger, 'json');
+            $inputInitializer = new InputProviderInitializer($inputStagingFactory, $providerFactory);
+            $inputInitializer->initializeProviders(
+                InputStrategyFactory::WORKSPACE_SNOWFLAKE,
+                [
+                    'owner' => ['hasSnowflake' => true],
+                ],
+                '/tmp/random/data'
+            );
 
-        $outputStagingFactory = new OutputStrategyFactory($clientWrapper, $logger, 'json');
-        $outputInitializer = new OutputProviderInitializer($outputStagingFactory, $providerFactory);
-        $outputInitializer->initializeProviders(
-            OutputStrategyFactory::WORKSPACE_SNOWFLAKE,
-            [
-                'owner' => ['hasSnowflake' => true],
-            ],
-            '/tmp/random/data'
-        );
+            $outputStagingFactory = new OutputStrategyFactory($clientWrapper, $logger, 'json');
+            $outputInitializer = new OutputProviderInitializer($outputStagingFactory, $providerFactory);
+            $outputInitializer->initializeProviders(
+                OutputStrategyFactory::WORKSPACE_SNOWFLAKE,
+                [
+                    'owner' => ['hasSnowflake' => true],
+                ],
+                '/tmp/random/data'
+            );
 
-        // TODO how to test?
-        
-//        $inputStagingFactory->getTableInputStrategy(OutputStrategyFactory::WORKSPACE_SNOWFLAKE, 'test', new InputTableStateList([]))->downloadTable(new InputTableOptions([]));
-//        $inputStagingFactory->getFileInputStrategy(OutputStrategyFactory::WORKSPACE_SNOWFLAKE);
-//        $outputStagingFactory->getTableOutputStrategy(OutputStrategyFactory::WORKSPACE_SNOWFLAKE, 'test', new InputTableStateList([]));
-//        $outputStagingFactory->getFileOutputStrategy(OutputStrategyFactory::WORKSPACE_SNOWFLAKE);
+            $inputStrategy = $inputStagingFactory->getTableInputStrategy(OutputStrategyFactory::WORKSPACE_SNOWFLAKE, 'test', new InputTableStateList([]));
+            $reflection = new ReflectionProperty($inputStrategy, 'dataStorage');
+            $reflection->setAccessible(true);
+            /** @var ProviderInterface $dataStorage */
+            $dataStorage = $reflection->getValue($inputStrategy);
+            $workspaceId1 = $dataStorage->getWorkspaceId();
+
+            $outputStrategy = $outputStagingFactory->getTableOutputStrategy(OutputStrategyFactory::WORKSPACE_SNOWFLAKE);
+            $reflection = new ReflectionProperty($outputStrategy, 'dataStorage');
+            $reflection->setAccessible(true);
+            /** @var ProviderInterface $dataStorage */
+            $dataStorage = $reflection->getValue($outputStrategy);
+            $workspaceId2 = $dataStorage->getWorkspaceId();
+
+            self::assertEquals($workspaceId1, $workspaceId2);
+        } finally {
+            $componentsApi->deleteConfiguration($componentId, $configId);
+        }
     }
 }
